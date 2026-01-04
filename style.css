@@ -11,7 +11,7 @@ video, canvas {
   object-fit: cover;
 }
 
-/* Snapchat selfie mirror */
+/* selfie view */
 video, canvas {
   transform: scaleX(-1);
 }

@@ -2,9 +2,7 @@ const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
-let celebrated = false;
-
-// Resize
+// Resize canvas
 function resize() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
@@ -12,112 +10,115 @@ function resize() {
 resize();
 window.addEventListener("resize", resize);
 
-// Camera
+// Start camera
 navigator.mediaDevices.getUserMedia({ video: true })
-  .then(s => video.srcObject = s);
+  .then(stream => video.srcObject = stream);
 
-// MediaPipe
+// Initialize MediaPipe Holistic
 const holistic = new Holistic({
-  locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${f}`
+  locateFile: file =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`
 });
 
 holistic.setOptions({
+  modelComplexity: 1,
+  smoothLandmarks: true,
   refineFaceLandmarks: true,
   minDetectionConfidence: 0.5,
   minTrackingConfidence: 0.5
 });
 
-holistic.onResults(res => {
+// Draw labels
+function drawLabel(text, x, y, color) {
+  ctx.fillStyle = color;
+  ctx.font = "16px Arial";
+  ctx.fillText(text, x, y);
+}
+
+// Results callback
+holistic.onResults(results => {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (!res.faceLandmarks) return;
 
-  const lm = res.faceLandmarks;
+  /* ===== FACE OUTLINE ===== */
+  if (results.faceLandmarks) {
+    drawConnectors(
+      ctx,
+      results.faceLandmarks,
+      FACEMESH_TESSELATION,
+      { color: "#00FF00", lineWidth: 1 }
+    );
 
-  const L = lm[33];
-  const R = lm[263];
-  const N = lm[1];
+    const forehead = results.faceLandmarks[10];
+    drawLabel(
+      "FACE",
+      forehead.x * canvas.width,
+      forehead.y * canvas.height - 10,
+      "#00FF00"
+    );
+  }
 
-  const lx = L.x * canvas.width;
-  const ly = L.y * canvas.height;
-  const rx = R.x * canvas.width;
-  const ry = R.y * canvas.height;
-  const nx = N.x * canvas.width;
-  const ny = N.y * canvas.height;
+  /* ===== LEFT HAND ===== */
+  if (results.leftHandLandmarks) {
+    drawConnectors(
+      ctx,
+      results.leftHandLandmarks,
+      HAND_CONNECTIONS,
+      { color: "#FF0000", lineWidth: 2 }
+    );
 
-  const faceW = Math.hypot(rx - lx, ry - ly) * 2.4;
-  const angle = Math.atan2(ry - ly, rx - lx);
+    const wrist = results.leftHandLandmarks[0];
+    drawLabel(
+      "LEFT HAND",
+      wrist.x * canvas.width,
+      wrist.y * canvas.height - 10,
+      "#FF0000"
+    );
+  }
 
-  ctx.save();
-  ctx.translate(nx, ny);
-  ctx.rotate(angle);
+  /* ===== RIGHT HAND ===== */
+  if (results.rightHandLandmarks) {
+    drawConnectors(
+      ctx,
+      results.rightHandLandmarks,
+      HAND_CONNECTIONS,
+      { color: "#0000FF", lineWidth: 2 }
+    );
 
-  // 🐷 HEAD
-  ctx.fillStyle = "#ffb6c1";
-  ctx.beginPath();
-  ctx.ellipse(0, 0, faceW * 0.6, faceW * 0.55, 0, 0, Math.PI * 2);
-  ctx.fill();
+    const wrist = results.rightHandLandmarks[0];
+    drawLabel(
+      "RIGHT HAND",
+      wrist.x * canvas.width,
+      wrist.y * canvas.height - 10,
+      "#0000FF"
+    );
+  }
 
-  // 🐷 EARS
-  ctx.fillStyle = "#ff9aaa";
-  ctx.beginPath();
-  ctx.ellipse(-faceW * 0.5, -faceW * 0.55, faceW * 0.25, faceW * 0.35, -0.5, 0, Math.PI * 2);
-  ctx.ellipse(faceW * 0.5, -faceW * 0.55, faceW * 0.25, faceW * 0.35, 0.5, 0, Math.PI * 2);
-  ctx.fill();
+  /* ===== BODY / POSE ===== */
+  if (results.poseLandmarks) {
+    drawConnectors(
+      ctx,
+      results.poseLandmarks,
+      POSE_CONNECTIONS,
+      { color: "#FFFF00", lineWidth: 2 }
+    );
 
-  // 🐽 SNOUT
-  ctx.fillStyle = "#ff7f9f";
-  ctx.beginPath();
-  ctx.ellipse(0, faceW * 0.15, faceW * 0.25, faceW * 0.18, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 🐽 NOSTRILS
-  ctx.fillStyle = "#333";
-  ctx.beginPath();
-  ctx.arc(-faceW * 0.08, faceW * 0.15, faceW * 0.04, 0, Math.PI * 2);
-  ctx.arc(faceW * 0.08, faceW * 0.15, faceW * 0.04, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 👀 EYES
-  ctx.fillStyle = "#000";
-  ctx.beginPath();
-  ctx.arc(-faceW * 0.2, -faceW * 0.1, faceW * 0.05, 0, Math.PI * 2);
-  ctx.arc(faceW * 0.2, -faceW * 0.1, faceW * 0.05, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.restore();
-
-  // 🎉 Celebration trigger (stable alignment)
-  if (!celebrated && faceW > 180) {
-    celebrated = true;
-    blastConfetti();
-    speak();
+    const nose = results.poseLandmarks[0];
+    drawLabel(
+      "BODY",
+      nose.x * canvas.width,
+      nose.y * canvas.height - 20,
+      "#FFFF00"
+    );
   }
 });
 
 // Camera loop
 const camera = new Camera(video, {
-  onFrame: async () => holistic.send({ image: video }),
+  onFrame: async () => {
+    await holistic.send({ image: video });
+  },
   width: 640,
   height: 480
 });
+
 camera.start();
-
-// 🎊 Confetti
-function blastConfetti() {
-  for (let i = 0; i < 120; i++) {
-    ctx.fillStyle = `hsl(${Math.random() * 360},100%,60%)`;
-    ctx.fillRect(
-      Math.random() * canvas.width,
-      Math.random() * canvas.height,
-      6, 6
-    );
-  }
-}
-
-// 🔊 Voice
-function speak() {
-  const msg = new SpeechSynthesisUtterance("You are pig, congratulations!");
-  msg.rate = 0.9;
-  msg.pitch = 1.2;
-  speechSynthesis.speak(msg);
-}
